@@ -14,7 +14,7 @@ mkdir -p "$CONFIG_DIR"
 mkdir -p "$BIN_DIR"
 
 # Remove old directories if they exist (but not if they're already symlinks)
-for dir in hypr rofi; do
+for dir in hypr rofi waybar; do
     if [ -d "$CONFIG_DIR/$dir" ] && [ ! -L "$CONFIG_DIR/$dir" ]; then
         echo "Warning: $CONFIG_DIR/$dir already exists. Backing up to ${dir}.bak"
         mv "$CONFIG_DIR/$dir" "$CONFIG_DIR/${dir}.bak"
@@ -32,6 +32,7 @@ done
 # Create symlinks
 ln -sfn "$REPO_DIR/hypr" "$CONFIG_DIR/hypr"
 ln -sfn "$REPO_DIR/rofi" "$CONFIG_DIR/rofi"
+ln -sfn "$REPO_DIR/waybar" "$CONFIG_DIR/waybar"
 ln -sfn "$REPO_DIR/.local/bin/rofi-wifi" "$BIN_DIR/rofi-wifi"
 ln -sfn "$REPO_DIR/.local/bin/rofi-bluetooth" "$BIN_DIR/rofi-bluetooth"
 
@@ -42,7 +43,7 @@ chmod +x "$REPO_DIR/.local/bin/rofi-bluetooth"
 echo "✓ Configuration installed successfully!"
 echo ""
 echo "Symlinks created:"
-ls -la "$CONFIG_DIR/hypr" "$CONFIG_DIR/rofi" "$BIN_DIR/rofi-wifi" "$BIN_DIR/rofi-bluetooth"
+ls -la "$CONFIG_DIR/hypr" "$CONFIG_DIR/rofi" "$CONFIG_DIR/waybar" "$BIN_DIR/rofi-wifi" "$BIN_DIR/rofi-bluetooth"
 echo ""
 echo "Note: wpa_cli requires sudoers configuration for passwordless execution:"
 echo "  echo \"$USER ALL=(ALL) NOPASSWD: /sbin/wpa_cli\" | sudo tee /etc/sudoers.d/wpa_cli"
