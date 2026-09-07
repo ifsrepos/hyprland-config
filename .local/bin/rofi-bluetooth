@@ -1,0 +1,133 @@
+#!/bin/bash
+# rofi-bluetooth: Manage Bluetooth devices and power using rofi and bluetoothctl
+
+set -e
+
+# Main menu
+show_main_menu() {
+    local bt_status=$(bluetoothctl show | grep "Powered:" | awk '{print $2}')
+    local status_text="[$([ "$bt_status" = "yes" ] && echo "ON" || echo "OFF")]"
+
+    echo "Toggle Bluetooth $status_text"
+    echo "Paired Devices"
+    echo "Scan for Devices"
+}
+
+# Get paired devices with connection status
+show_paired_devices() {
+    bluetoothctl devices Paired | while read -r line; do
+        if [ -n "$line" ]; then
+            device_addr=$(echo "$line" | awk '{print $2}')
+            device_name=$(echo "$line" | cut -d' ' -f3-)
+
+            # Check if connected
+            is_connected=$(bluetoothctl info "$device_addr" | grep "Connected:" | awk '{print $2}')
+            status="$([ "$is_connected" = "yes" ] && echo "✓" || echo "○")"
+
+            echo "$status $device_name ($device_addr)"
+        fi
+    done
+}
+
+# Get discoverable devices (scan results)
+show_scan_devices() {
+    echo "Scanning..."
+    bluetoothctl scan on &
+    scan_pid=$!
+    sleep 3
+    kill $scan_pid 2>/dev/null || true
+
+    bluetoothctl devices | grep -v "$(bluetoothctl devices Paired | awk '{print $2}' | tr '\n' '|')" | while read -r line; do
+        if [ -n "$line" ]; then
+            device_addr=$(echo "$line" | awk '{print $2}')
+            device_name=$(echo "$line" | cut -d' ' -f3-)
+            echo "⊕ $device_name ($device_addr)"
+        fi
+    done
+}
+
+# Connect to device
+connect_device() {
+    local device_addr=$1
+    bluetoothctl connect "$device_addr" > /dev/null 2>&1 &
+    sleep 2
+}
+
+# Disconnect from device
+disconnect_device() {
+    local device_addr=$1
+    bluetoothctl disconnect "$device_addr" > /dev/null 2>&1
+}
+
+# Toggle Bluetooth power
+toggle_bluetooth() {
+    local current=$(bluetoothctl show | grep "Powered:" | awk '{print $2}')
+    if [ "$current" = "yes" ]; then
+        bluetoothctl power off
+    else
+        bluetoothctl power on
+    fi
+}
+
+# Pair with device
+pair_device() {
+    local device_addr=$1
+    bluetoothctl pair "$device_addr" > /dev/null 2>&1 &
+    sleep 3
+}
+
+# Main flow
+choice=$(show_main_menu | rofi -dmenu -p "Bluetooth: " -i \
+    -width 1200 -lines 3 -font "monospace 12" \
+    -theme-str "window { height: 80%; } listview { dynamic: false; }")
+
+if [ -z "$choice" ]; then
+    exit 0
+fi
+
+case "$choice" in
+    Toggle*)
+        toggle_bluetooth
+        notify-send "Bluetooth" "Power toggled"
+        ;;
+    "Paired Devices")
+        device_choice=$(show_paired_devices | rofi -dmenu -p "Select Device: " -i \
+            -width 1200 -font "monospace 12" \
+            -theme-str "window { height: 80%; } listview { dynamic: false; }")
+
+        if [ -z "$device_choice" ]; then
+            exit 0
+        fi
+
+        device_addr=$(echo "$device_choice" | grep -oE '\([0-9A-F:]+\)' | tr -d '()')
+        is_connected=$(bluetoothctl info "$device_addr" | grep "Connected:" | awk '{print $2}')
+
+        if [ "$is_connected" = "yes" ]; then
+            disconnect_device "$device_addr"
+            notify-send "Bluetooth" "Disconnected from $(echo "$device_choice" | sed 's/ (.*//g')"
+        else
+            connect_device "$device_addr"
+            notify-send "Bluetooth" "Connecting to $(echo "$device_choice" | sed 's/ (.*//g')..."
+        fi
+        ;;
+    "Scan for Devices")
+        device_choice=$(show_scan_devices | rofi -dmenu -p "Select Device: " -i \
+            -width 1200 -font "monospace 12" \
+            -theme-str "window { height: 80%; } listview { dynamic: false; }")
+
+        if [ -z "$device_choice" ]; then
+            exit 0
+        fi
+
+        device_addr=$(echo "$device_choice" | grep -oE '\([0-9A-F:]+\)' | tr -d '()')
+        device_name=$(echo "$device_choice" | sed 's/ (.*//g' | sed 's/^. //')
+
+        rofi -e "Pairing with $device_name..."
+        pair_device "$device_addr"
+
+        # Try to connect after pairing
+        sleep 1
+        connect_device "$device_addr"
+        notify-send "Bluetooth" "Paired and connecting to $device_name"
+        ;;
+esac

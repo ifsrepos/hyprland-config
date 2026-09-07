@@ -1,0 +1,59 @@
+#!/bin/bash
+# rofi-wifi: Connect to WiFi using rofi and wpa_cli
+
+set -e
+
+# Scan for networks
+sudo wpa_cli scan > /dev/null 2>&1
+sleep 2
+
+# Get available networks with signal strength, sorted by signal (strongest first)
+networks=$(sudo wpa_cli scan_results | tail -n +2 | awk -F'\t' 'NF {print $3 "\t" $5}' | sort -rn | awk -F'\t' '!seen[$2]++' | awk -F'\t' '{printf "%s (%d dBm)\n", $2, $1}')
+
+if [ -z "$networks" ]; then
+    rofi -e "No WiFi networks found"
+    exit 1
+fi
+
+# Count networks and calculate lines needed
+network_count=$(echo "$networks" | wc -l)
+lines=$((network_count > 20 ? 20 : network_count))
+
+# Show network list in rofi with better formatting
+selected=$(echo "$networks" | rofi -dmenu -p "WiFi: " -i \
+  -width 1200 -lines "$lines" -font "monospace 12" \
+  -theme-str "window { height: 80%; } listview { dynamic: false; }" | sed 's/ (.*//')
+
+if [ -z "$selected" ]; then
+    exit 0
+fi
+
+# Check if network already exists
+network_id=$(sudo wpa_cli list_networks | grep "^[0-9]*	$selected	" | cut -f1)
+
+if [ -z "$network_id" ]; then
+    # Network doesn't exist, prompt for password
+    password=$(rofi -dmenu -p "Password for '$selected': " -password < /dev/null 2>/dev/null)
+
+    if [ -z "$password" ]; then
+        exit 0
+    fi
+
+    # Add new network
+    network_id=$(sudo wpa_cli add_network | tail -1)
+    sudo wpa_cli set_network "$network_id" ssid "\"$selected\"" > /dev/null
+    sudo wpa_cli set_network "$network_id" psk "\"$password\"" > /dev/null
+
+    # Save configuration
+    sudo wpa_cli save_config > /dev/null 2>&1
+fi
+
+# Enable network
+sudo wpa_cli enable_network "$network_id" > /dev/null
+
+# Notify user (if notify-send available)
+if command -v notify-send &> /dev/null; then
+    notify-send "WiFi" "Connecting to $selected..."
+else
+    rofi -e "Connecting to $selected..."
+fi
