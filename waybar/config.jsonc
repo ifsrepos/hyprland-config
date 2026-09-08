@@ -12,11 +12,19 @@
 	],
 
 	"modules-right": [
+		"hyprland/language",
 		"network",
-	"pulseaudio",
-	"battery",
-	"clock"
+		"pulseaudio",
+		"battery",
+		"clock"
 	],
+
+	"hyprland/language": {
+		"format": "{}",
+		"format-es": "ES",
+		"format-pl": "PL",
+		"keyboard-name": "at-translated-set-2-keyboard"
+	},
 
 	"hyprland/workspaces": {
 		"format": "{name}"
