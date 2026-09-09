@@ -14,7 +14,7 @@
 @define-color nord11 #bf616a;
 
 * {
-    font-family: "IBM Plex Mono", monospace;
+    font-family: "IBM Plex Mono", "JetBrainsMono Nerd Font", "DejaVu Sans Mono", monospace;
     font-size: 13px;
     border: none;
     border-radius: 0;
@@ -83,4 +83,16 @@ window#waybar {
 
 #network.disconnected {
     color: @nord11;
+}
+
+tooltip {
+    background: @nord0;
+    border: 1px solid @nord1;
+    border-radius: 6px;
+}
+
+tooltip label {
+    color: @nord4;
+    padding: 12px;
+    font-size: 15px;
 }
