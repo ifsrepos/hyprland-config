@@ -1,0 +1,27 @@
+#!/bin/bash
+# lid-monitor-handler: Handle monitor switching on lid events
+
+LAPTOP_DISPLAY="eDP-1"
+EXTERNAL_DISPLAY="HDMI-A-1"
+
+log_event() {
+    echo "[$(date '+%Y-%m-%d %H:%M:%S')] $1" >> ~/.local/var/log/hyprland-lid-events.log
+}
+
+# Ensure log directory exists
+mkdir -p ~/.local/var/log
+
+# Listen for lid events from systemd-logind
+dbus-monitor --system "type='signal',interface='org.freedesktop.login1.Manager',member='PrepareForSleep'" | while read line; do
+    if echo "$line" | grep -q "boolean true"; then
+        # System going to sleep (lid closing)
+        log_event "Lid closed - disabling laptop display"
+        WAYLAND_DISPLAY=wayland-1 hyprctl keyword monitor "$LAPTOP_DISPLAY,disabled"
+        sleep 1
+        WAYLAND_DISPLAY=wayland-1 hyprctl keyword monitor "$EXTERNAL_DISPLAY,preferred,auto,auto"
+    elif echo "$line" | grep -q "boolean false"; then
+        # System waking up (lid opening)
+        log_event "Lid opened - enabling laptop display"
+        WAYLAND_DISPLAY=wayland-1 hyprctl keyword monitor "$LAPTOP_DISPLAY,preferred,auto,auto"
+    fi
+done
