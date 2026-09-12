@@ -31,15 +31,20 @@ show_paired_devices() {
 
 # Get discoverable devices (scan results)
 show_scan_devices() {
-    echo "Scanning..."
+    echo "Scanning (10 seconds)..."
     bluetoothctl scan on &
     scan_pid=$!
-    sleep 3
+    sleep 10
     kill $scan_pid 2>/dev/null || true
 
-    bluetoothctl devices | grep -v "$(bluetoothctl devices Paired | awk '{print $2}' | tr '\n' '|')" | while read -r line; do
+    paired_macs=$(bluetoothctl devices Paired | awk '{print $2}')
+    bluetoothctl devices | while read -r line; do
         if [ -n "$line" ]; then
             device_addr=$(echo "$line" | awk '{print $2}')
+            # Skip if this device is already paired
+            if echo "$paired_macs" | grep -q "^$device_addr$"; then
+                continue
+            fi
             device_name=$(echo "$line" | cut -d' ' -f3-)
             echo "⊕ $device_name ($device_addr)"
         fi
