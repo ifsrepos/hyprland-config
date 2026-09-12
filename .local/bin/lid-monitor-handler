@@ -1,5 +1,5 @@
 #!/bin/bash
-# lid-monitor-handler: Handle monitor switching on lid events
+# lid-monitor-handler: Handle monitor switching on lid open/close events
 
 LAPTOP_DISPLAY="eDP-1"
 EXTERNAL_DISPLAY="HDMI-A-1"
@@ -11,17 +11,55 @@ log_event() {
 # Ensure log directory exists
 mkdir -p ~/.local/var/log
 
-# Listen for lid events from systemd-logind
-dbus-monitor --system "type='signal',interface='org.freedesktop.login1.Manager',member='PrepareForSleep'" | while read line; do
-    if echo "$line" | grep -q "boolean true"; then
-        # System going to sleep (lid closing)
-        log_event "Lid closed - disabling laptop display"
-        WAYLAND_DISPLAY=wayland-1 hyprctl keyword monitor "$LAPTOP_DISPLAY,disabled"
-        sleep 1
-        WAYLAND_DISPLAY=wayland-1 hyprctl keyword monitor "$EXTERNAL_DISPLAY,preferred,auto,auto"
-    elif echo "$line" | grep -q "boolean false"; then
-        # System waking up (lid opening)
-        log_event "Lid opened - enabling laptop display"
-        WAYLAND_DISPLAY=wayland-1 hyprctl keyword monitor "$LAPTOP_DISPLAY,preferred,auto,auto"
+# Get initial lid state
+get_lid_state() {
+    cat /proc/acpi/button/lid/*/state 2>/dev/null | awk '{print $NF}' | head -1
+}
+
+# Move workspaces to monitor when lid closes/opens
+handle_lid_close() {
+    log_event "Lid closed - disabling laptop display and moving workspaces"
+    sleep 1
+
+    # Disable laptop display
+    hyprctl keyword monitor "$LAPTOP_DISPLAY,disabled" 2>/dev/null
+    sleep 1
+
+    # Move all workspaces from eDP-1 to HDMI-A-1
+    for ws in $(hyprctl workspaces -j | jq -r '.[] | select(.monitorID | . != 1) | .id'); do
+        hyprctl dispatch moveworkspacetomonitor "$ws 1" 2>/dev/null
+    done
+
+    # Focus external display
+    hyprctl dispatch focusmonitor "$EXTERNAL_DISPLAY" 2>/dev/null
+}
+
+handle_lid_open() {
+    log_event "Lid opened - enabling laptop display"
+
+    # Enable laptop display
+    hyprctl keyword monitor "$LAPTOP_DISPLAY,preferred,auto,0x0" 2>/dev/null
+    sleep 1
+
+    # Move some workspaces back to laptop display if desired
+    # (optional - you can configure which workspaces stay on which display)
+}
+
+# Monitor lid state changes
+LAST_STATE=$(get_lid_state)
+log_event "Initial lid state: $LAST_STATE"
+
+while true; do
+    CURRENT_STATE=$(get_lid_state)
+
+    if [ "$CURRENT_STATE" != "$LAST_STATE" ]; then
+        if [ "$CURRENT_STATE" = "closed" ]; then
+            handle_lid_close
+        else
+            handle_lid_open
+        fi
+        LAST_STATE=$CURRENT_STATE
     fi
+
+    sleep 1
 done
