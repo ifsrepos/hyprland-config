@@ -3,6 +3,17 @@
 
 set -e
 
+# Show notification (with fallback if notify-send fails)
+show_notification() {
+    local title=$1
+    local message=$2
+    if command -v notify-send &> /dev/null && notify-send "$title" "$message" 2>/dev/null; then
+        return
+    fi
+    # Fallback to rofi
+    rofi -e "$title: $message" &
+}
+
 # Main menu
 show_main_menu() {
     local bt_status=$(bluetoothctl show | grep "Powered:" | awk '{print $2}')
@@ -31,14 +42,16 @@ show_paired_devices() {
 
 # Get discoverable devices (scan results)
 show_scan_devices() {
-    echo "Scanning (10 seconds)..."
-    bluetoothctl scan on &
-    scan_pid=$!
-    sleep 10
-    kill $scan_pid 2>/dev/null || true
+    local paired_macs=$(bluetoothctl devices Paired | awk '{print $2}')
 
-    paired_macs=$(bluetoothctl devices Paired | awk '{print $2}')
-    bluetoothctl devices | while read -r line; do
+    # Use interactive bluetoothctl to scan and list devices
+    (
+        echo "scan on"
+        sleep 12
+        echo "devices"
+        sleep 1
+        echo "quit"
+    ) | bluetoothctl 2>&1 | grep "^Device" | while read -r line; do
         if [ -n "$line" ]; then
             device_addr=$(echo "$line" | awk '{print $2}')
             # Skip if this device is already paired
@@ -74,11 +87,36 @@ toggle_bluetooth() {
     fi
 }
 
-# Pair with device
+# Pair with device (run in interactive mode like user does)
 pair_device() {
     local device_addr=$1
-    bluetoothctl pair "$device_addr" > /dev/null 2>&1 &
-    sleep 3
+    local device_name=$2
+
+    # Run pairing in interactive mode and capture output
+    local output=$(
+        (
+            echo "pair $device_addr"
+            sleep 5
+            echo "connect $device_addr"
+            sleep 2
+            echo "trust $device_addr"
+            sleep 1
+            echo "quit"
+        ) | bluetoothctl 2>&1
+    )
+
+    # Check if pairing succeeded
+    if echo "$output" | grep -q "Pairing successful\|Device added"; then
+        show_notification "Bluetooth" "Successfully paired with $device_name"
+        return 0
+    elif echo "$output" | grep -q "Failed\|Error"; then
+        local error=$(echo "$output" | grep -i "failed\|error" | head -1)
+        show_notification "Bluetooth" "Pairing failed: $error"
+        return 1
+    else
+        show_notification "Bluetooth" "Paired and connected to $device_name"
+        return 0
+    fi
 }
 
 # Main flow
@@ -93,7 +131,7 @@ fi
 case "$choice" in
     Toggle*)
         toggle_bluetooth
-        notify-send "Bluetooth" "Power toggled"
+        show_notification "Bluetooth" "Power toggled"
         ;;
     "Paired Devices")
         device_choice=$(show_paired_devices | rofi -dmenu -p "Select Device: " -i \
@@ -109,10 +147,10 @@ case "$choice" in
 
         if [ "$is_connected" = "yes" ]; then
             disconnect_device "$device_addr"
-            notify-send "Bluetooth" "Disconnected from $(echo "$device_choice" | sed 's/ (.*//g')"
+            show_notification "Bluetooth" "Disconnected from $(echo "$device_choice" | sed 's/ (.*//g')"
         else
             connect_device "$device_addr"
-            notify-send "Bluetooth" "Connecting to $(echo "$device_choice" | sed 's/ (.*//g')..."
+            show_notification "Bluetooth" "Connecting to $(echo "$device_choice" | sed 's/ (.*//g')..."
         fi
         ;;
     "Scan for Devices")
@@ -127,12 +165,7 @@ case "$choice" in
         device_addr=$(echo "$device_choice" | grep -oE '\([0-9A-F:]+\)' | tr -d '()')
         device_name=$(echo "$device_choice" | sed 's/ (.*//g' | sed 's/^. //')
 
-        rofi -e "Pairing with $device_name..."
-        pair_device "$device_addr"
-
-        # Try to connect after pairing
-        sleep 1
-        connect_device "$device_addr"
-        notify-send "Bluetooth" "Paired and connecting to $device_name"
+        show_notification "Bluetooth" "Pairing with $device_name..."
+        pair_device "$device_addr" "$device_name"
         ;;
 esac
